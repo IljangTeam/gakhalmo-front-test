@@ -199,6 +199,9 @@ def notifyDiscord(String status) {
     // POD_LABEL implicit binding 이 주입되지 않는 경우가 있어 node() 인자는
     // 반드시 같은 라벨 문자열을 직접 넘긴다.
     def podLabel = "gakhalmo-front-test-discord-${env.BUILD_NUMBER}"
+    // 이미지는 bitnami/kubectl(Debian 기반, curl 포함) 을 사용한다.
+    // curlimages/curl 같은 Alpine/busybox 이미지의 /bin/sh 는 durable-task
+    // 의 프로세스 종료 감지와 충돌해 `sh` 스텝이 완료 후에도 hang 된다.
     try {
         podTemplate(
             label: podLabel,
@@ -207,10 +210,12 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-    - name: curl
-      image: docker.io/curlimages/curl:8.10.1
+    - name: shell
+      image: docker.io/bitnami/kubectl:latest
       command: ['cat']
       tty: true
+      securityContext:
+        runAsUser: 0
       resources:
         requests:
           cpu: '50m'
@@ -221,7 +226,7 @@ spec:
 '''
         ) {
             node(podLabel) {
-                container('curl') {
+                container('shell') {
                     def payload = groovy.json.JsonOutput.toJson([
                         username: 'Jenkins',
                         embeds: [[
