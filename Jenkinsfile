@@ -195,9 +195,13 @@ def notifyDiscord(String status) {
     def imageTag  = (env.IMAGE_TAG  ?: '-').toString()
     def duration  = (currentBuild.durationString ?: '-').replace(' and counting', '')
 
+    // podTemplate.label 을 로컬 변수로 바인딩 — kubernetes plugin 버전에 따라
+    // POD_LABEL implicit binding 이 주입되지 않는 경우가 있어 node() 인자는
+    // 반드시 같은 라벨 문자열을 직접 넘긴다.
+    def podLabel = "gakhalmo-front-test-discord-${env.BUILD_NUMBER}"
     try {
         podTemplate(
-            label: "gakhalmo-front-test-discord-${env.BUILD_NUMBER}",
+            label: podLabel,
             yaml: '''
 apiVersion: v1
 kind: Pod
@@ -216,7 +220,7 @@ spec:
           memory: '128Mi'
 '''
         ) {
-            node(POD_LABEL) {
+            node(podLabel) {
                 container('curl') {
                     def payload = groovy.json.JsonOutput.toJson([
                         username: 'Jenkins',
