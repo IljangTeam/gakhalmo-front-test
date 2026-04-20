@@ -229,6 +229,7 @@ spec:
                 container('shell') {
                     def payload = groovy.json.JsonOutput.toJson([
                         username: 'Jenkins',
+                        avatar_url: 'https://www.jenkins.io/images/logos/jenkins/jenkins.png',
                         embeds: [[
                             title: "${emoji} ${jobName} #${buildNum}".toString(),
                             url: buildUrl,
