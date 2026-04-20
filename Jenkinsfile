@@ -42,10 +42,10 @@ spec:
             }
             steps {
                 script {
-                    if (env.BRANCH_NAME == 'main') {
-                        env.TARGET_ENV = 'prod'
-                        env.GITOPS_KUSTOMIZE_DIR = 'apps/temp-front/overlays/prod'
-                    } else if (env.BRANCH_NAME == 'develop') {
+                    // temp-front 는 dev 단일 환경(테스트용). main 머지도 dev 에 재배포한다 —
+                    // 머지 직후 배포 이미지가 develop 최종 상태와 main 이 일치한다는 것을
+                    // 한 번 더 확인하는 역할.
+                    if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'develop') {
                         env.TARGET_ENV = 'dev'
                         env.GITOPS_KUSTOMIZE_DIR = 'apps/temp-front/overlays/dev'
                     } else {
