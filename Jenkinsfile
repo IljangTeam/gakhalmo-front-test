@@ -154,10 +154,100 @@ spec:
 
     post {
         success {
-            echo "Successfully deployed ${IMAGE_NAME}:${env.IMAGE_TAG} to ${env.TARGET_ENV}"
+            script {
+                notifyDiscord('success')
+            }
         }
         failure {
-            echo "Pipeline failed for ${IMAGE_NAME}"
+            script {
+                notifyDiscord('failure')
+            }
         }
+        aborted {
+            script {
+                notifyDiscord('aborted')
+            }
+        }
+    }
+}
+
+// Discord 알림 헬퍼 — gakhalmo-back 과 동일한 패턴.
+//   agent none 인 post 블록에서 sh 를 실행하려면 node context 가 필요하므로
+//   curl 만 들어있는 경량 파드를 띄워 webhook POST 만 수행한다.
+//   webhook URL 은 "Secret text" credential(Discord-Webhook) 로 주입 — Groovy 레벨
+//   노출 없이 shell env 로만 전달된다. 알림 실패가 빌드 결과에 영향을 주지 않도록
+//   try/catch 로 감싸 실패는 echo 로만 기록한다.
+def notifyDiscord(String status) {
+    def color
+    def emoji
+    def text
+    switch (status) {
+        case 'success': color = 3066993;  emoji = ':white_check_mark:'; text = 'Success'; break
+        case 'failure': color = 15158332; emoji = ':x:';                text = 'Failure'; break
+        case 'aborted': color = 15105570; emoji = ':warning:';          text = 'Aborted'; break
+        default:        color = 9807270;  emoji = ':information_source:'; text = status
+    }
+    def jobName   = (env.JOB_NAME   ?: '').toString()
+    def buildNum  = (env.BUILD_NUMBER ?: '').toString()
+    def branch    = (env.BRANCH_NAME ?: '-').toString()
+    def buildUrl  = (env.BUILD_URL  ?: '').toString()
+    def targetEnv = (env.TARGET_ENV ?: '-').toString()
+    def imageTag  = (env.IMAGE_TAG  ?: '-').toString()
+    def duration  = (currentBuild.durationString ?: '-').replace(' and counting', '')
+
+    try {
+        podTemplate(
+            label: "gakhalmo-front-test-discord-${env.BUILD_NUMBER}",
+            yaml: '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: curl
+      image: docker.io/curlimages/curl:8.10.1
+      command: ['cat']
+      tty: true
+      resources:
+        requests:
+          cpu: '50m'
+          memory: '64Mi'
+        limits:
+          cpu: '200m'
+          memory: '128Mi'
+'''
+        ) {
+            node(POD_LABEL) {
+                container('curl') {
+                    def payload = groovy.json.JsonOutput.toJson([
+                        username: 'Jenkins',
+                        embeds: [[
+                            title: "${emoji} ${jobName} #${buildNum}".toString(),
+                            url: buildUrl,
+                            color: color,
+                            fields: [
+                                [name: 'Status',   value: text,      inline: true],
+                                [name: 'Branch',   value: branch,    inline: true],
+                                [name: 'Env',      value: targetEnv, inline: true],
+                                [name: 'Image',    value: imageTag,  inline: true],
+                                [name: 'Duration', value: duration,  inline: true]
+                            ]
+                        ]]
+                    ])
+                    writeFile file: 'discord-payload.json', text: payload
+                    withCredentials([string(credentialsId: 'Discord-Webhook', variable: 'DISCORD_WEBHOOK_URL')]) {
+                        sh '''
+                            set +x
+                            curl -sS --max-time 15 --retry 2 --retry-delay 2 \
+                                -o /dev/null -w "discord webhook HTTP %{http_code}\\n" \
+                                -H "Content-Type: application/json" \
+                                -X POST --data-binary @discord-payload.json \
+                                "$DISCORD_WEBHOOK_URL"
+                        '''
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        echo "Discord notification failed: ${err.message}"
     }
 }
