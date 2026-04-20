@@ -67,16 +67,16 @@
         </details>
 
         <details>
-          <summary><strong>📌 DEFERRED (Phase H)</strong> — 신규 도메인/정책 결정 필요</summary>
+          <summary><strong>✅ PHASE H 완료</strong> — 신규 도메인 4개 + 정책 + 실시간</summary>
           <ul class="gap-list">
-            <li>M9 · Chat/대화함 도메인</li>
-            <li>M10 · Notification 도메인 + 사이드바 배지</li>
-            <li>M11 · Review/회고 도메인</li>
-            <li>M12 · 출석률 (ATTENDED/NO_SHOW)</li>
-            <li>M13 · Connection/연결된 사람 도메인</li>
-            <li>M14 · 실시간 채널 (WebSocket/SSE)</li>
-            <li>M16 · 24시간 전 취소 정책 (time-guard)</li>
-            <li>M17 · 알림 설정 페이지</li>
+            <li>M9 ✅ Chat — rooms/messages, 승인 시 자동 room 생성 (섹션 O)</li>
+            <li>M10 ✅ Notification — 모든 이벤트 자동 알림 (섹션 L)</li>
+            <li>M11 ✅ Review — 모임 종료 후 회고 작성 (섹션 M)</li>
+            <li>M12 ✅ 출석률 — meeting_attendances 테이블 + 집계 API</li>
+            <li>M13 ✅ Connection — 팔로우 요청/수락/목록 (섹션 N)</li>
+            <li>M14 ✅ 실시간 — WebSocket /api/v1/ws, in-memory hub (단일 pod)</li>
+            <li>M16 ✅ 24h 취소 정책 — leave_meeting ForbiddenError (백엔드 적용)</li>
+            <li>M17 ✅ 알림 설정 — users.notification_prefs JSON, PATCH /auth/me</li>
           </ul>
         </details>
       </section>
@@ -486,10 +486,10 @@
           </div>
 
           <div class="mp-stats">
-            <div><strong id="mp-attendance">N/A</strong><small>출석률 <span class="lbl miss">📌 Phase H</span></small></div>
+            <div><strong id="mp-attendance">—</strong><small>출석률 (attended/total)</small></div>
             <div><strong id="mp-joined">—</strong><small>참여 모임</small></div>
             <div><strong id="mp-upcoming">—</strong><small>예정 모임</small></div>
-            <div><strong id="mp-connections">N/A</strong><small>연결된 사람 <span class="lbl miss">📌 Phase H</span></small></div>
+            <div><strong id="mp-connections">—</strong><small>연결된 사람 (ACCEPTED)</small></div>
           </div>
 
           <div class="mp-card">
@@ -515,13 +515,160 @@
 
           <div class="mp-card">
             <h4>설정</h4>
-            <div>🔔 알림 설정 <span class="lbl miss">📌 Phase H</span></div>
-            <div>⚙️ 계정 설정 <span class="lbl miss">📌 Phase H</span></div>
+            <div>🔔 알림 설정 (섹션 L 의 토글로 조절)</div>
             <button data-action="logout" class="danger">🚪 로그아웃</button>
           </div>
         </div>
 
         <pre class="out" data-out="mypage"></pre>
+      </section>
+
+      <!-- L. 알림 -->
+      <section id="sec-notifications" class="design-mock">
+        <h2>L. 알림 (Notifications)</h2>
+        <p class="note">
+          백엔드 이벤트 훅(approve/reject/join/leave/review/connection/message) 에서 자동 생성.
+          payload 는 type 별로 다른 구조. notification_prefs 로 on/off 토글.
+        </p>
+
+        <button data-action="notif-load">알림 로드</button>
+        <button data-action="notif-read-all" class="chip">모두 읽음</button>
+        <div>미읽음: <strong id="notif-unread">—</strong></div>
+
+        <div id="notif-list" class="mp-layout"></div>
+
+        <fieldset>
+          <legend>알림 설정 (users.notification_prefs JSON)</legend>
+          <label><input type="checkbox" id="pref-pp" /> 참여 요청 (participant_pending)</label>
+          <label><input type="checkbox" id="pref-msg" /> 새 메시지 (new_message)</label>
+          <label><input type="checkbox" id="pref-conn" /> 연결 요청 (connection_requested)</label>
+          <label><input type="checkbox" id="pref-review" /> 회고 요청 (review_requested)</label>
+          <button data-action="notif-prefs-save">저장 (PATCH /auth/me)</button>
+        </fieldset>
+
+        <pre class="out" data-out="notif"></pre>
+      </section>
+
+      <!-- M. 회고 & 출석 -->
+      <section id="sec-review" class="design-mock">
+        <h2>M. 회고 + 출석 (Review + Attendance)</h2>
+        <p class="note">
+          모임 종료 후: 호스트는 참여자 출석 마킹, 참여자들은 서로 회고 작성.
+          출석률은 attended/(attended+no_show).
+        </p>
+
+        <fieldset>
+          <legend>회고 작성 (참여자 기준, 본인에게는 불가)</legend>
+          <label>meeting_id <input id="rv-meeting-id" /></label>
+          <label>reviewee_id <input id="rv-reviewee" /></label>
+          <label>rating (1-5) <input type="number" id="rv-rating" value="5" min="1" max="5" /></label>
+          <label>content <input id="rv-content" placeholder="짧게" size="40" /></label>
+          <button data-action="review-create">POST /meetings/{id}/reviews</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>받은 회고 목록</legend>
+          <label>user_id <input id="rv-user-id" /></label>
+          <button data-action="review-list">GET /users/{id}/reviews</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>출석 마킹 (호스트 전용)</legend>
+          <label>meeting_id <input id="att-meeting-id" /></label>
+          <label>user_id <input id="att-user-id" /></label>
+          <label>status
+            <select id="att-status">
+              <option value="attended">attended</option>
+              <option value="no_show">no_show</option>
+            </select>
+          </label>
+          <button data-action="attendance-mark">POST /meetings/{id}/attendance/{user_id}</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>출석률 조회</legend>
+          <label>user_id <input id="att-rate-user-id" /></label>
+          <button data-action="attendance-rate">GET /users/{id}/attendance-rate</button>
+        </fieldset>
+
+        <pre class="out" data-out="review"></pre>
+      </section>
+
+      <!-- N. 연결 (Connection) -->
+      <section id="sec-connection" class="design-mock">
+        <h2>N. 연결 (Connection / Follow)</h2>
+        <p class="note">
+          follower → following. 요청은 PENDING, 수락되면 ACCEPTED. 쌍방 연결은 2 row.
+        </p>
+
+        <fieldset>
+          <legend>연결 요청</legend>
+          <label>target user_id <input id="conn-target-user" /></label>
+          <button data-action="connect-request">POST /users/{id}/connect</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>connection_id 기반</legend>
+          <label>connection_id <input id="conn-id" /></label>
+          <button data-action="connect-accept">POST /connections/{id}/accept</button>
+          <button data-action="connect-remove" class="danger">DELETE /connections/{id}</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>목록 / 카운트</legend>
+          <label>user_id <input id="conn-list-user" /></label>
+          <label>direction
+            <select id="conn-direction">
+              <option value="followers">followers (나를 팔로우)</option>
+              <option value="following">following (내가 팔로우)</option>
+            </select>
+          </label>
+          <label>status filter
+            <select id="conn-status-filter">
+              <option value="">(all)</option>
+              <option value="pending">pending</option>
+              <option value="accepted">accepted</option>
+            </select>
+          </label>
+          <button data-action="connect-list">GET /users/{id}/connections</button>
+          <button data-action="connect-count">GET .../connections/count</button>
+        </fieldset>
+
+        <pre class="out" data-out="connection"></pre>
+      </section>
+
+      <!-- O. 채팅 -->
+      <section id="sec-chat" class="design-mock">
+        <h2>O. 채팅 + WebSocket 실시간</h2>
+        <p class="note">
+          참여 승인 시 chat_room 자동 생성. HTTP POST 로 메시지 전송 → 서버가
+          동일 room 참여자에게 WS broadcast. WS 는 <code>/api/v1/ws?token=…</code> 접속.
+        </p>
+
+        <fieldset>
+          <legend>내 채팅방 목록</legend>
+          <button data-action="chat-rooms">GET /chat/rooms</button>
+          <div id="chat-rooms-list"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>선택한 방 메시지 조회/전송</legend>
+          <label>room_id <input id="chat-room-id" size="30" /></label>
+          <button data-action="chat-messages">메시지 목록</button>
+          <button data-action="chat-read" class="chip">읽음 처리</button>
+          <div id="chat-messages" style="max-height: 240px; overflow: auto; border: 1px solid #ddd; padding: 6px; margin: 6px 0;"></div>
+          <label>메시지 <input id="chat-content" size="40" placeholder="입력 후 전송" /></label>
+          <button data-action="chat-send">POST /chat/rooms/{id}/messages</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>WebSocket</legend>
+          <button data-action="chat-ws-connect">🔌 WS 연결</button>
+          <button data-action="chat-ws-disconnect" class="chip danger">종료</button>
+          <pre id="chat-ws-log" style="max-height: 160px; overflow: auto; background: #111; color: #c8e6c9; padding: 6px;"></pre>
+        </fieldset>
+
+        <pre class="out" data-out="chat"></pre>
       </section>
     </main>
 

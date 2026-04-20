@@ -352,6 +352,144 @@ async function handle(action, btn) {
       renderMypageMeetings();
       return;
 
+    // ============ L. 알림 ============
+    case 'notif-load':
+      return loadNotifications();
+    case 'notif-mark-read': {
+      const id = btn.dataset.id;
+      const r = await call('POST', `/api/v1/notifications/${id}/read`);
+      show('notif', r);
+      if (r.ok) loadNotifications();
+      return;
+    }
+    case 'notif-read-all': {
+      const r = await call('POST', '/api/v1/notifications/read-all');
+      show('notif', r);
+      if (r.ok) loadNotifications();
+      return;
+    }
+    case 'notif-delete': {
+      const id = btn.dataset.id;
+      const r = await call('DELETE', `/api/v1/notifications/${id}`);
+      show('notif', r);
+      if (r.ok) loadNotifications();
+      return;
+    }
+    case 'notif-prefs-save': {
+      const prefs = {
+        participant_pending: checked('pref-pp'),
+        new_message: checked('pref-msg'),
+        connection_requested: checked('pref-conn'),
+        review_requested: checked('pref-review'),
+      };
+      const r = await call('PATCH', '/api/v1/auth/me', { body: { notification_prefs: prefs } });
+      show('notif', r);
+      return;
+    }
+
+    // ============ M. 회고 & 출석 ============
+    case 'review-create': {
+      const meetingId = val('rv-meeting-id');
+      const body = {
+        reviewee_id: val('rv-reviewee'),
+        rating: num('rv-rating'),
+        content: val('rv-content') || null,
+      };
+      const r = await call('POST', `/api/v1/meetings/${meetingId}/reviews`, { body });
+      return show('review', r);
+    }
+    case 'review-list': {
+      const userId = val('rv-user-id');
+      const r = await call('GET', `/api/v1/users/${userId}/reviews`, { auth: false });
+      return show('review', r);
+    }
+    case 'attendance-mark': {
+      const meetingId = val('att-meeting-id');
+      const userId = val('att-user-id');
+      const r = await call('POST', `/api/v1/meetings/${meetingId}/attendance/${userId}`, {
+        body: { status: val('att-status') },
+      });
+      return show('review', r);
+    }
+    case 'attendance-rate': {
+      const userId = val('att-rate-user-id');
+      const r = await call('GET', `/api/v1/users/${userId}/attendance-rate`, { auth: false });
+      return show('review', r);
+    }
+
+    // ============ N. 연결 (Connection) ============
+    case 'connect-request': {
+      const userId = val('conn-target-user');
+      const r = await call('POST', `/api/v1/users/${userId}/connect`);
+      return show('connection', r);
+    }
+    case 'connect-accept': {
+      const id = val('conn-id');
+      const r = await call('POST', `/api/v1/connections/${id}/accept`);
+      return show('connection', r);
+    }
+    case 'connect-remove': {
+      const id = val('conn-id');
+      if (!confirm(`connection ${id} 제거?`)) return;
+      const r = await call('DELETE', `/api/v1/connections/${id}`);
+      return show('connection', r);
+    }
+    case 'connect-list': {
+      const userId = val('conn-list-user');
+      const direction = val('conn-direction') || 'followers';
+      const statusSel = val('conn-status-filter');
+      const q = { direction };
+      if (statusSel) q.status = statusSel;
+      const r = await call('GET', `/api/v1/users/${userId}/connections`, {
+        auth: false,
+        query: q,
+      });
+      return show('connection', r);
+    }
+    case 'connect-count': {
+      const userId = val('conn-list-user');
+      const r = await call('GET', `/api/v1/users/${userId}/connections/count`, { auth: false });
+      return show('connection', r);
+    }
+
+    // ============ O. 채팅 ============
+    case 'chat-rooms':
+      return loadChatRooms();
+    case 'chat-messages': {
+      const roomId = val('chat-room-id');
+      const r = await call('GET', `/api/v1/chat/rooms/${roomId}/messages`, {
+        query: { limit: 50 },
+      });
+      show('chat', r);
+      if (r.ok) renderChatMessages(r.body);
+      return;
+    }
+    case 'chat-send': {
+      const roomId = val('chat-room-id');
+      const body = { content: val('chat-content') };
+      const r = await call('POST', `/api/v1/chat/rooms/${roomId}/messages`, { body });
+      show('chat', r);
+      if (r.ok) {
+        document.getElementById('chat-content').value = '';
+        // 즉시 목록 갱신 — WS 미연결 시에도 UI 업데이트.
+        const msgs = await call('GET', `/api/v1/chat/rooms/${roomId}/messages`, { query: { limit: 50 } });
+        if (msgs.ok) renderChatMessages(msgs.body);
+      }
+      return;
+    }
+    case 'chat-read': {
+      const roomId = val('chat-room-id');
+      const r = await call('POST', `/api/v1/chat/rooms/${roomId}/read`);
+      return show('chat', r);
+    }
+    case 'chat-ws-connect':
+      return connectWebSocket();
+    case 'chat-ws-disconnect':
+      return disconnectWebSocket();
+    case 'chat-pick-room':
+      // 내부 dom 리스너가 값 세팅. switch 에선 no-op.
+      return;
+
     default:
       console.warn('unknown action', action);
   }
@@ -633,6 +771,30 @@ async function loadMypage() {
   document.getElementById('mp-tab-upcoming').textContent = upcoming.length;
   document.getElementById('mp-tab-past').textContent = past.length;
 
+  // 실수치 반영 — attendance rate 와 connection count.
+  const attRate = await call('GET', `/api/v1/users/${me.body.id}/attendance-rate`, { auth: false });
+  if (attRate.ok) {
+    const { attended, total_recorded, rate } = attRate.body;
+    document.getElementById('mp-attendance').textContent = total_recorded === 0
+      ? '— (기록 없음)'
+      : `${Math.round(rate * 100)}% (${attended}/${total_recorded})`;
+  }
+  const connCount = await call('GET', `/api/v1/users/${me.body.id}/connections/count`, { auth: false });
+  if (connCount.ok) {
+    document.getElementById('mp-connections').textContent = connCount.body.count;
+  }
+
+  // 알림 설정 체크박스 prefill
+  const prefs = me.body.notification_prefs || {};
+  const setPref = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = prefs[key] !== false;  // 기본값 true
+  };
+  setPref('pref-pp', 'participant_pending');
+  setPref('pref-msg', 'new_message');
+  setPref('pref-conn', 'connection_requested');
+  setPref('pref-review', 'review_requested');
+
   renderMyTags();
   renderMypageMeetings();
   show('mypage', `me=${me.body.id} · hosted=${hosted.body?.length ?? 'x'} · joined=${joined.body?.length ?? 'x'} · upcoming=${upcoming.length} · past=${past.length}`);
@@ -728,4 +890,111 @@ function escape(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
+}
+
+// =================== L. 알림 ===================
+async function loadNotifications() {
+  const list = await call('GET', '/api/v1/notifications', { query: { limit: 30 } });
+  const count = await call('GET', '/api/v1/notifications/unread-count');
+  if (!list.ok) return show('notif', list);
+
+  document.getElementById('notif-unread').textContent = count.ok ? count.body.unread : '?';
+  const box = document.getElementById('notif-list');
+  box.innerHTML = list.body.map(n => `
+    <div class="mp-meeting">
+      <strong>${escape(n.type)}</strong>
+      ${n.read_at ? '<span class="badge badge-green">읽음</span>' : '<span class="badge badge-red">새</span>'}
+      <div><code>${escape(JSON.stringify(n.payload))}</code></div>
+      <small>${n.created_at}</small>
+      ${n.read_at ? '' : `<button data-action="notif-mark-read" data-id="${n.id}" class="chip">읽음 처리</button>`}
+      <button data-action="notif-delete" data-id="${n.id}" class="chip danger">삭제</button>
+    </div>
+  `).join('') || '<em>(알림 없음)</em>';
+  show('notif', `${list.body.length}건 로드, 미읽음 ${count.body?.unread ?? '?'}`);
+}
+
+// =================== O. 채팅 ===================
+let chatSocket = null;
+function renderChatMessages(list) {
+  const box = document.getElementById('chat-messages');
+  // 최신순 응답을 시간 역순으로 뒤집어서 아래가 최신.
+  const ordered = [...list].reverse();
+  box.innerHTML = ordered.map(m => `
+    <div class="pp-card">
+      <strong>${escape(m.user?.name || '?')}</strong>
+      ${m.user?.job ? `<span class="chip-tag chip-green">${escape(m.user.job)}</span>` : ''}
+      <small>${m.created_at}</small>
+      <div>${escape(m.content)}</div>
+    </div>
+  `).join('') || '<em>(메시지 없음)</em>';
+  box.scrollTop = box.scrollHeight;
+}
+
+async function loadChatRooms() {
+  const r = await call('GET', '/api/v1/chat/rooms');
+  if (!r.ok) return show('chat', r);
+  const box = document.getElementById('chat-rooms-list');
+  box.innerHTML = r.body.map(room => `
+    <div class="mp-meeting">
+      <strong>room ${room.id.slice(0,8)}</strong>
+      · meeting ${room.meeting_id.slice(0,8)}
+      · 참여 ${room.participants.length}명
+      · 미읽음 ${room.unread}
+      ${room.last_message ? `<div><em>최신: ${escape(room.last_message.content.slice(0,40))}</em></div>` : ''}
+      <button data-action="chat-pick-room" data-id="${room.id}" class="chip">이 방 선택</button>
+    </div>
+  `).join('') || '<em>(참여한 채팅방 없음)</em>';
+  box.querySelectorAll('[data-action="chat-pick-room"]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.getElementById('chat-room-id').value = b.dataset.id;
+    });
+  });
+  show('chat', `${r.body.length}개 채팅방`);
+}
+
+function connectWebSocket() {
+  if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+    show('chat', 'WebSocket 이미 연결됨');
+    return;
+  }
+  const token = tokens.access();
+  if (!token) {
+    show('chat', '로그인 먼저 해주세요 (WS 는 토큰 필수)');
+    return;
+  }
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProto}//${location.host}/api/v1/ws?token=${encodeURIComponent(token)}`;
+  chatSocket = new WebSocket(wsUrl);
+
+  const wsBox = document.getElementById('chat-ws-log');
+  const append = (txt) => {
+    wsBox.textContent += `[${new Date().toLocaleTimeString()}] ${txt}\n`;
+    wsBox.scrollTop = wsBox.scrollHeight;
+  };
+  chatSocket.addEventListener('open', () => append('✅ WS open'));
+  chatSocket.addEventListener('close', (e) => append(`❌ WS close code=${e.code}`));
+  chatSocket.addEventListener('error', () => append('⚠️ WS error'));
+  chatSocket.addEventListener('message', (e) => {
+    append(`📩 ${e.data}`);
+    // 현재 선택된 room 과 동일하면 메시지 목록 새로고침.
+    try {
+      const data = JSON.parse(e.data);
+      if (data.event === 'new_message') {
+        const currentRoom = val('chat-room-id');
+        if (currentRoom === data.message.room_id) {
+          call('GET', `/api/v1/chat/rooms/${currentRoom}/messages`, { query: { limit: 50 } })
+            .then(r => r.ok && renderChatMessages(r.body));
+        }
+      }
+    } catch {}
+  });
+  show('chat', 'WebSocket 연결 중...');
+}
+
+function disconnectWebSocket() {
+  if (chatSocket) {
+    chatSocket.close();
+    chatSocket = null;
+    show('chat', 'WebSocket 종료');
+  }
 }
