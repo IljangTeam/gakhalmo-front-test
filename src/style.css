@@ -1,0 +1,97 @@
+/* 의도적으로 최소한의 읽기용 스타일. 디자인 X, 가독성만. */
+body { font-family: -apple-system, system-ui, sans-serif; margin: 12px; line-height: 1.4; }
+header { border-bottom: 1px solid #ccc; padding-bottom: 8px; margin-bottom: 16px; }
+h1 { margin: 0 0 8px 0; font-size: 18px; }
+h2 { margin: 0 0 8px 0; font-size: 16px; background: #f0f0f0; padding: 4px 8px; }
+section { border: 1px solid #ddd; padding: 8px; margin-bottom: 16px; }
+fieldset { border: 1px dashed #bbb; padding: 6px; margin-bottom: 8px; }
+legend { font-weight: 600; font-size: 13px; }
+label { display: inline-block; margin: 4px 8px 4px 0; font-size: 13px; }
+label input, label select, label textarea { margin-left: 4px; font-family: inherit; }
+textarea { vertical-align: top; width: 300px; height: 40px; }
+input[type="text"], input[type="email"], input[type="password"], input { min-width: 140px; }
+input[type="number"] { width: 80px; }
+button { margin: 4px 4px 4px 0; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+button.danger { background: #f88; }
+code { background: #f6f6f6; padding: 1px 4px; border-radius: 2px; font-size: 12px; }
+.note { font-size: 12px; color: #555; background: #fafafa; padding: 6px; border-left: 3px solid #999; margin-bottom: 8px; }
+.session { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 12px; }
+.session code { display: inline-block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+pre.out { background: #111; color: #c8e6c9; padding: 8px; font-size: 11px; overflow: auto; max-height: 320px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; }
+.card { border: 1px solid #ccc; padding: 6px; margin: 4px 0; font-size: 12px; }
+.card button { font-size: 11px; }
+.region-hit { display: inline-block; background: #eef; padding: 2px 6px; margin: 2px; border-radius: 2px; font-size: 12px; cursor: pointer; }
+.region-hit:hover { background: #ccf; }
+small { color: #888; font-size: 11px; }
+
+/* === 갭 리포트 === */
+.gap-report { border-left: 4px solid #dc3545; }
+.gap-report details { margin: 6px 0; }
+.gap-report summary { cursor: pointer; padding: 4px 0; }
+.gap-list { margin: 4px 0 8px 18px; font-size: 12px; }
+.gap-list li { margin: 2px 0; }
+.lbl { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; margin: 0 2px; vertical-align: middle; white-space: nowrap; }
+.lbl.miss { background: #ffd6d6; color: #a00; border: 1px solid #f88; }
+.lbl.partial { background: #fff3cd; color: #856404; border: 1px solid #e0c878; }
+
+/* === 디자인 시나리오 공통 === */
+.design-mock { border-left: 4px solid #0066cc; background: #fafcff; }
+.chip { display: inline-block; padding: 4px 10px; margin: 2px 3px; border: 1px solid #ccc; background: #fff; border-radius: 14px; cursor: pointer; font-size: 12px; }
+.chip.active, .chip-dark { background: #222; color: #fff; border-color: #222; }
+.chip-plus { background: #eef; }
+.chip.danger { background: #f88; border-color: #c33; color: #fff; }
+.chip-tag { display: inline-block; padding: 2px 8px; margin: 1px; border-radius: 12px; font-size: 11px; }
+.chip-orange { background: #fff1e6; color: #c0630c; }
+.chip-blue { background: #e6f0ff; color: #1b4d99; }
+.chip-green { background: #e6f5eb; color: #1f7a3a; }
+.chip-x { background: transparent; border: 0; color: #900; cursor: pointer; font-weight: bold; }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; margin: 0 2px; font-weight: 600; }
+.badge-green { background: #d4edda; color: #155724; }
+.badge-blue { background: #cce5ff; color: #004085; }
+.badge-red { background: #f8d7da; color: #721c24; }
+.badge-dark { background: #222; color: #fff; }
+.ok { color: #1f7a3a; }
+.danger { color: #c33; }
+
+/* H. 피드 */
+.design-feed-toolbar { background: #fff; border: 1px solid #ddd; padding: 8px; border-radius: 6px; margin-bottom: 8px; }
+.design-feed-status { font-size: 12px; margin: 6px 0; }
+.design-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+.design-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px; font-size: 12px; }
+.design-card strong { font-size: 14px; }
+.design-card .dc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.design-card .dc-tags, .design-card .dc-meta, .design-card .dc-foot { margin: 4px 0; }
+.design-card .dc-foot { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ddd; }
+.design-pagination { text-align: center; margin: 10px 0; font-size: 12px; }
+
+/* I. 상세 */
+.dd-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin: 10px 0; }
+.dd-main { display: flex; flex-direction: column; gap: 12px; }
+.dd-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; }
+.dd-card h3 { margin: 6px 0; }
+.dd-header .dd-recurrence { color: #666; font-size: 12px; }
+.dd-tags { margin: 8px 0; }
+.dd-meta { font-size: 13px; line-height: 1.8; }
+.dd-desc { margin-top: 8px; color: #444; font-size: 12px; }
+.dd-sticky { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; position: sticky; top: 8px; font-size: 12px; }
+.dd-sticky progress { width: 100%; height: 6px; margin: 8px 0; }
+.dd-cta { display: block; width: 100%; padding: 10px; background: #222; color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; margin: 8px 0; }
+.dd-note { background: #fff3cd; padding: 6px; font-size: 11px; border-radius: 4px; margin: 6px 0; }
+.pp-card { background: #fafafa; border-radius: 6px; padding: 8px; margin: 4px 0; font-size: 12px; }
+.pp-empty { border: 1px dashed #bbb; padding: 10px; text-align: center; color: #888; font-size: 12px; margin: 4px 0; border-radius: 6px; }
+
+/* J. 폼 */
+.design-form { display: flex; flex-direction: column; gap: 8px; background: #fff; padding: 12px; border-radius: 6px; }
+.dc-submit { padding: 10px; background: #222; color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; }
+
+/* K. 마이 */
+.mp-layout { display: grid; gap: 10px; margin: 10px 0; }
+.mp-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; }
+.mp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mp-stats > div { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px; text-align: center; }
+.mp-stats strong { display: block; font-size: 18px; }
+.mp-stats small { display: block; font-size: 11px; color: #666; }
+.mp-tabs { margin: 8px 0; }
+.mp-meeting { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px; margin: 6px 0; font-size: 12px; }
+.chip-row { margin: 4px 0; }

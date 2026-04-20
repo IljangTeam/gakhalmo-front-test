@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gakhalmo API 테스트</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>gakhalmo API 테스트 패널</h1>
+      <div id="session" class="session">
+        <div>
+          <strong>Base URL</strong>
+          <code id="base-url"></code>
+          <small>(dev: vite proxy, prod: nginx reverse proxy)</small>
+        </div>
+        <div>
+          <strong>access_token</strong>
+          <code id="tok-access">(없음)</code>
+          <button data-action="logout">로그아웃(토큰 비우기)</button>
+        </div>
+        <div>
+          <strong>로그인 유저</strong>
+          <code id="tok-me">(/me 눌러서 확인)</code>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- ========== 디자인 ↔ API 갭 리포트 ========== -->
+      <section id="sec-gap" class="gap-report">
+        <h2>📋 디자인 ↔ API 갭 리포트</h2>
+        <p class="note">
+          MVP 리팩터 결과. 해결은 ✅, 다음 이터레이션 이관은 📌,
+          클라이언트에서 파생 처리는 🧮.
+        </p>
+
+        <details open>
+          <summary><strong>✅ RESOLVED</strong> — 이번에 해결된 항목</summary>
+          <ul class="gap-list">
+            <li>M1 · <code>User.tags[]</code> — <code>users.tags</code> JSON 컬럼 + <code>PATCH /auth/me</code> 로 저장/조회</li>
+            <li>M2 · <code>User.job</code> — <code>users.job VARCHAR(100)</code> + <code>UserSummary</code>에도 노출</li>
+            <li>M4 · <code>GET /regions/popular</code> — 홍대/성수/강남/판교/종로 프리셋 서버 제공</li>
+            <li>M5 · 장소 검색 — <code>regions/search</code> + <code>location_name</code> 자유 텍스트로 합치(설계 의도)</li>
+            <li>M15/P2 · <code>is_full</code> 파생 필드 — <code>MeetingResponse.is_full = current>=max</code></li>
+            <li>M8 · 요일 파생 — <code>new Date(meeting_date).getDay()</code> 로 클라 계산 (서버 무보장)</li>
+            <li>O1/O2 · 비인증 user CRUD (POST/GET-list/PATCH/DELETE) → 전부 삭제. <code>GET /users/{id}</code> 만 공개 프로필로 유지</li>
+            <li>O3 · Series 독립 CRUD 5개 엔드포인트 → 삭제. <code>POST /meetings</code> 의 <code>is_recurring</code> + <code>recurrence</code> 로 내부 생성</li>
+            <li>O4 · Google OAuth — 디자인 미확정, 유지 (기존 스펙 그대로)</li>
+            <li>O5 · <code>PATCH/DELETE /meetings/{id}</code> — 호스트 수정/삭제 유지 (장기적 필요)</li>
+            <li>P3 · <code>User.bio</code> ↔ 디자인 "한 줄 소개" — 정상 매핑</li>
+          </ul>
+        </details>
+
+        <details>
+          <summary><strong>🧮 CLIENT-DERIVED</strong> — 서버 스펙 늘리지 않고 클라에서 파생</summary>
+          <ul class="gap-list">
+            <li>M3 · 시간대 필터(오전/오후/저녁/밤) — <code>meeting_time</code> 버킷 함수로 필터</li>
+            <li>M6 · 페이지네이션 메타 — 현재 페이지 + 다음 페이지 버튼만 (total 미반환)</li>
+            <li>M7 · 시리즈 회차 — <code>series_id</code> 기준 목록 정렬 후 index+1 로 파생 가능</li>
+            <li>M18 · 멀티 region 필터 — 단일 region + 순차 재조회로 커버</li>
+            <li>P1 · 시안1 "취미" vs 서버 <code>기타</code> — 디자인 일관화 과제 (코드 불변)</li>
+            <li>P4 · <code>location_name</code> — 자유 텍스트(디자인 "장소 검색" UX 를 <code>regions/search</code> + 텍스트로 합침)</li>
+            <li>P5 · <code>current_participants</code> — <code>is_full</code> 로 강화 표시</li>
+          </ul>
+        </details>
+
+        <details>
+          <summary><strong>📌 DEFERRED (Phase H)</strong> — 신규 도메인/정책 결정 필요</summary>
+          <ul class="gap-list">
+            <li>M9 · Chat/대화함 도메인</li>
+            <li>M10 · Notification 도메인 + 사이드바 배지</li>
+            <li>M11 · Review/회고 도메인</li>
+            <li>M12 · 출석률 (ATTENDED/NO_SHOW)</li>
+            <li>M13 · Connection/연결된 사람 도메인</li>
+            <li>M14 · 실시간 채널 (WebSocket/SSE)</li>
+            <li>M16 · 24시간 전 취소 정책 (time-guard)</li>
+            <li>M17 · 알림 설정 페이지</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- 시나리오 A: 인증 -->
+      <section id="sec-auth">
+        <h2>A. 인증 (Auth)</h2>
+        <p class="note">
+          시나리오: ① 로컬 회원가입 → ② 로그인(토큰 발급) → ③ /me 확인 →
+          ④ PATCH /me 로 프로필 수정 → ⑤ refresh → ⑥ 로그아웃. Google OAuth 는 브라우저 탭에서 확인.
+        </p>
+
+        <fieldset>
+          <legend>① 회원가입</legend>
+          <label>email <input type="email" id="reg-email" value="alice@example.com" /></label>
+          <label>password <input type="password" id="reg-pw" value="test1234" /></label>
+          <label>name <input id="reg-name" value="Alice" /></label>
+          <button data-action="auth-register">POST /api/v1/auth/register</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>② 로그인</legend>
+          <label>email <input type="email" id="login-email" value="alice@example.com" /></label>
+          <label>password <input type="password" id="login-pw" value="test1234" /></label>
+          <button data-action="auth-login">POST /api/v1/auth/login</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>③ 내 정보</legend>
+          <button data-action="auth-me">GET /api/v1/auth/me</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>④ 내 프로필 수정 (신규)</legend>
+          <label>name <input id="me-name" placeholder="(변경 시 입력)" /></label>
+          <label>bio <input id="me-bio" placeholder="(변경 시 입력)" /></label>
+          <label>job <input id="me-job" placeholder="예: 백엔드" /></label>
+          <label>tags(쉼표구분) <input id="me-tags" placeholder="#홍대, #저녁, #공부" size="40" /></label>
+          <button data-action="auth-me-patch">PATCH /api/v1/auth/me</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>⑤ 토큰 리프레시</legend>
+          <button data-action="auth-refresh">POST /api/v1/auth/refresh</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>⑥ Google OAuth</legend>
+          <button data-action="auth-google">GET /api/v1/auth/google/login (새 탭)</button>
+        </fieldset>
+
+        <pre class="out" data-out="auth"></pre>
+      </section>
+
+      <!-- 시나리오 B: 지역 -->
+      <section id="sec-regions">
+        <h2>B. 지역 (Regions)</h2>
+        <p class="note">
+          시나리오: 오프라인 모임 개설에 필요한 <code>region_id</code> 를 자동완성/프리셋으로 탐색.
+          검색 결과 칩 클릭 시 C 섹션(모임 개설)의 <code>region_id</code> 필드에 자동 반영됨.
+        </p>
+
+        <fieldset>
+          <legend>검색 (full_name ILIKE)</legend>
+          <label>q <input id="region-q" placeholder="예: 강남, 경기도 수원" /></label>
+          <label>limit <input type="number" id="region-limit" value="10" min="1" max="100" /></label>
+          <button data-action="region-search">GET /api/v1/regions/search</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>프리셋 (신규)</legend>
+          <button data-action="region-popular">GET /api/v1/regions/popular</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>단건 조회</legend>
+          <label>region_id <input type="number" id="region-id" value="1" /></label>
+          <button data-action="region-get">GET /api/v1/regions/{id}</button>
+        </fieldset>
+
+        <div id="region-results"></div>
+        <pre class="out" data-out="region"></pre>
+      </section>
+
+      <!-- 시나리오 C: 모임 개설 -->
+      <section id="sec-meeting-create">
+        <h2>C. 모임 개설 (Meeting Create)</h2>
+        <p class="note">
+          시나리오: 로그인한 사용자가 호스트가 되어 모임을 개설. 오프라인이면
+          region_id + location_name 필수. <code>is_recurring=true</code> 면
+          <code>recurrence{frequency,end_date}</code> 가 필수이며 서버가 Series 를 자동 생성해
+          연결한다.
+        </p>
+
+        <fieldset>
+          <legend>신규 모임</legend>
+          <label>title <input id="mc-title" value="주말 모각코" /></label>
+          <label>mode
+            <select id="mc-mode">
+              <option value="offline">offline</option>
+              <option value="online">online</option>
+            </select>
+          </label>
+          <label>region_id <input type="number" id="mc-region-id" placeholder="오프라인 필수" /></label>
+          <label>location_name <input id="mc-location-name" value="스타벅스 강남점" /></label>
+          <label>location_address <input id="mc-location-address" value="서울시 강남구" /></label>
+          <label>meeting_date <input type="date" id="mc-date" /></label>
+          <label>meeting_time <input type="time" id="mc-time" value="14:00" /></label>
+          <label>goal
+            <select id="mc-goal">
+              <option>공부</option>
+              <option>작업</option>
+              <option>독서</option>
+              <option>기타</option>
+            </select>
+          </label>
+          <label>max_participants <input type="number" id="mc-max" value="4" min="2" max="8" /></label>
+          <label>description <textarea id="mc-desc">조용히 각자 할 일 합니다</textarea></label>
+          <label>is_recurring <input type="checkbox" id="mc-recurring" /></label>
+          <label>recurrence.frequency
+            <select id="mc-freq">
+              <option>WEEKLY</option>
+              <option>BIWEEKLY</option>
+              <option>MONTHLY</option>
+            </select>
+          </label>
+          <label>recurrence.end_date <input type="date" id="mc-end" /></label>
+          <button data-action="meeting-create">POST /api/v1/meetings/</button>
+        </fieldset>
+
+        <pre class="out" data-out="meeting-create"></pre>
+      </section>
+
+      <!-- 시나리오 D: 모임 조회 -->
+      <section id="sec-meeting-list">
+        <h2>D. 모임 조회/필터 (Meeting List)</h2>
+        <p class="note">
+          시나리오: 목록에서 필터로 탐색 → 관심 있는 meeting_id 로 상세 조회.
+          응답에 <code>is_full</code>, <code>is_recurring</code> 플래그 포함.
+        </p>
+
+        <fieldset>
+          <legend>필터</legend>
+          <label>offset <input type="number" id="ml-offset" value="0" /></label>
+          <label>limit <input type="number" id="ml-limit" value="20" min="1" max="100" /></label>
+          <label>mode
+            <select id="ml-mode">
+              <option value="">(전체)</option>
+              <option value="offline">offline</option>
+              <option value="online">online</option>
+            </select>
+          </label>
+          <label>region_id <input type="number" id="ml-region-id" placeholder="(선택)" /></label>
+          <label>goal
+            <select id="ml-goal">
+              <option value="">(전체)</option>
+              <option>공부</option>
+              <option>작업</option>
+              <option>독서</option>
+              <option>기타</option>
+            </select>
+          </label>
+          <label>status
+            <select id="ml-status">
+              <option value="">(전체)</option>
+              <option value="recruiting">recruiting</option>
+              <option value="finished">finished</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          </label>
+          <label>date_from <input type="date" id="ml-from" /></label>
+          <label>date_to <input type="date" id="ml-to" /></label>
+          <button data-action="meeting-list">GET /api/v1/meetings/</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>호스트/참여자 기준 목록</legend>
+          <label>user_id <input id="ml-user-id" placeholder="UUID" /></label>
+          <button data-action="meeting-hosted">GET /api/v1/meetings/hosted/{id}</button>
+          <button data-action="meeting-participated">GET /api/v1/meetings/participated/{id}</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>상세</legend>
+          <label>meeting_id <input id="ml-meeting-id" placeholder="UUID" /></label>
+          <button data-action="meeting-get">GET /api/v1/meetings/{id}</button>
+        </fieldset>
+
+        <div id="meeting-cards"></div>
+        <pre class="out" data-out="meeting-list"></pre>
+      </section>
+
+      <!-- 시나리오 E: 모임 참여 -->
+      <section id="sec-participate">
+        <h2>E. 모임 참여/승인 (Participants)</h2>
+        <p class="note">
+          시나리오: (참여자) 로그인 → 모임에 join → 상태 PENDING. <br />
+          → (호스트로 재로그인) approve/reject 로 상태 전이. <br />
+          참여자는 언제든 탈퇴 가능(leave).
+        </p>
+
+        <fieldset>
+          <legend>참여 신청 / 탈퇴 (현재 로그인 유저 기준)</legend>
+          <label>meeting_id <input id="pt-meeting-id" /></label>
+          <button data-action="participant-join">POST /{meeting_id}/participants</button>
+          <button data-action="participant-leave">DELETE /{meeting_id}/participants/me</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>호스트 결정 (approve/reject)</legend>
+          <label>meeting_id <input id="pt-host-meeting-id" /></label>
+          <label>participant_id <input id="pt-participant-id" /></label>
+          <label>reason(옵션) <input id="pt-reason" /></label>
+          <button data-action="participant-approve">POST .../approve</button>
+          <button data-action="participant-reject">POST .../reject</button>
+        </fieldset>
+
+        <pre class="out" data-out="participant"></pre>
+      </section>
+
+      <!-- =================================================== -->
+      <!--       아래는 디자인 시안 재현 시나리오 (H~K)        -->
+      <!-- =================================================== -->
+
+      <!-- H. 홈 피드 (시안 1) -->
+      <section id="sec-design-feed" class="design-mock">
+        <h2>H. [디자인 재현] 홈 피드</h2>
+        <p class="note">
+          서버 반영: <code>/regions/popular</code> 프리셋 칩, 카드에 <code>is_full</code> 뱃지 +
+          host.job 노출. 시간대 필터는 <span class="lbl partial">🧮 클라 파생</span>.
+        </p>
+
+        <div class="design-feed-toolbar">
+          <div class="row">
+            <strong>모드:</strong>
+            <button data-action="feed-mode" data-val="" class="chip chip-dark active">전체</button>
+            <button data-action="feed-mode" data-val="online" class="chip">온라인</button>
+            <button data-action="feed-mode" data-val="offline" class="chip">오프라인</button>
+          </div>
+          <div class="row">
+            <strong>지역:</strong>
+            <span id="feed-region-chips"></span>
+            <button data-action="feed-regions-load" class="chip chip-plus">프리셋 로드</button>
+          </div>
+          <div class="row">
+            <strong>시간대:</strong>
+            <button data-action="feed-time" data-val="morning" class="chip">오전(06-12)</button>
+            <button data-action="feed-time" data-val="afternoon" class="chip">오후(12-17)</button>
+            <button data-action="feed-time" data-val="evening" class="chip">저녁(17-21)</button>
+            <button data-action="feed-time" data-val="night" class="chip">밤(21-06)</button>
+            <button data-action="feed-time" data-val="" class="chip">해제</button>
+          </div>
+          <div class="row">
+            <strong>목표:</strong>
+            <button data-action="feed-goal" data-val="독서" class="chip">독서</button>
+            <button data-action="feed-goal" data-val="작업" class="chip">작업</button>
+            <button data-action="feed-goal" data-val="공부" class="chip">공부</button>
+            <button data-action="feed-goal" data-val="기타" class="chip">기타</button>
+            <button data-action="feed-goal" data-val="" class="chip">해제</button>
+          </div>
+        </div>
+
+        <div class="design-feed-status">
+          <span id="feed-count">— 개</span>의 모임이 열려 있어요
+          <button data-action="feed-refresh" class="chip">🔄 재조회</button>
+        </div>
+
+        <div id="feed-cards" class="design-grid"></div>
+
+        <div class="design-pagination">
+          <button data-action="feed-page" data-val="prev">◀</button>
+          <span id="feed-page-label">page 1</span>
+          <button data-action="feed-page" data-val="next">▶</button>
+        </div>
+
+        <pre class="out" data-out="feed"></pre>
+      </section>
+
+      <!-- I. 모임 상세 뷰 (시안 2) -->
+      <section id="sec-design-detail" class="design-mock">
+        <h2>I. [디자인 재현] 모임 상세</h2>
+        <p class="note">
+          상세 응답 + 호스트 <code>GET /users/{id}</code> 조합으로 job/bio/tags 노출.
+          참여자 카드에는 <code>user.tags</code> 가 칩으로 그려진다 (MeetingParticipantResponse 안
+          UserSummary 의 job/tags 확장됨).
+        </p>
+
+        <label>meeting_id <input id="dd-meeting-id" size="30" /></label>
+        <button data-action="design-detail-load">상세 로드</button>
+
+        <div id="dd-mock" class="dd-layout" hidden>
+          <div class="dd-main">
+            <div class="dd-card dd-header">
+              <span class="badge badge-green" id="dd-status">모집 중</span>
+              <span id="dd-recurrence" class="dd-recurrence">—</span>
+              <h3 id="dd-title">—</h3>
+              <div id="dd-tags" class="dd-tags">—</div>
+              <div class="dd-meta">
+                <div>🕐 <span id="dd-datetime">—</span></div>
+                <div>📍 <span id="dd-location">—</span></div>
+                <div>👥 <span id="dd-counts">—</span></div>
+              </div>
+              <p id="dd-desc" class="dd-desc">—</p>
+            </div>
+
+            <div class="dd-card">
+              <h4>이런 분들이 함께해요 <span id="dd-count-label"></span></h4>
+              <div id="dd-participants"></div>
+            </div>
+
+            <div class="dd-card">
+              <h4>호스트</h4>
+              <div id="dd-host"></div>
+            </div>
+          </div>
+
+          <aside class="dd-aside">
+            <div class="dd-sticky">
+              <div id="dd-aside-date">—</div>
+              <div id="dd-aside-counts">—</div>
+              <progress id="dd-progress" max="8" value="0"></progress>
+              <button data-action="dd-join" class="dd-cta">참여 신청하기</button>
+              <div class="dd-note">
+                ⚠️ 노쇼 방지를 위해 24시간 전까지 취소 가능해요.
+                <br /><span class="lbl miss">M16 time-guard 📌 Phase H</span>
+              </div>
+              <button data-action="dd-leave" class="chip danger">참여 취소 (leave)</button>
+            </div>
+          </aside>
+        </div>
+
+        <pre class="out" data-out="design-detail"></pre>
+      </section>
+
+      <!-- J. 모임 개설 폼 (시안 3) -->
+      <section id="sec-design-create" class="design-mock">
+        <h2>J. [디자인 재현] 모임 개설 폼</h2>
+        <p class="note">
+          정기 모임 토글 활성화 시 주기/종료일 입력이 나타나고 서버가 Series 자동 생성.
+          장소는 <code>regions/search</code> + 자유 텍스트 조합.
+        </p>
+
+        <fieldset class="design-form">
+          <label>모임 제목 * <input id="dc-title" placeholder="예: 3시간만, 딱 집중하죠" size="40" /></label>
+          <div class="row">
+            <strong>온/오프라인 *</strong>
+            <button data-action="dc-mode" data-val="offline" class="chip chip-dark active">오프라인</button>
+            <button data-action="dc-mode" data-val="online" class="chip">온라인</button>
+          </div>
+          <div class="row">
+            <strong>지역 *</strong>
+            <span id="dc-region-chips"><em>프리셋 로드 버튼을 먼저 눌러주세요 (H 섹션)</em></span>
+          </div>
+          <label>장소 * <input id="dc-location" placeholder="카페, 공유오피스, 장소명" size="40" /></label>
+          <div class="row">
+            <label>날짜 * <input type="date" id="dc-date" /></label>
+            <label>시간 * <input type="time" id="dc-time" value="19:00" /></label>
+          </div>
+          <div class="row">
+            <strong>목표 *</strong>
+            <button data-action="dc-goal" data-val="공부" class="chip active">#공부</button>
+            <button data-action="dc-goal" data-val="작업" class="chip">#작업</button>
+            <button data-action="dc-goal" data-val="독서" class="chip">#독서</button>
+            <button data-action="dc-goal" data-val="기타" class="chip">#기타</button>
+          </div>
+          <div class="row">
+            <strong>최대 인원 *</strong>
+            <span id="dc-max-chips"></span>
+          </div>
+          <label>모임 설명 (선택)
+            <textarea id="dc-desc" rows="3" cols="40" placeholder="어떤 모임인지, 어떤 분들이 오시면 좋은지 자유롭게"></textarea>
+          </label>
+          <label class="row">
+            <input type="checkbox" id="dc-recurring" />
+            정기 모임 설정 — 다음 회차 자동 생성 (서버 기본 4회)
+          </label>
+          <label>정기 주기
+            <select id="dc-freq">
+              <option>WEEKLY</option>
+              <option>BIWEEKLY</option>
+              <option>MONTHLY</option>
+            </select>
+          </label>
+          <label>정기 종료일 (옵션) <input type="date" id="dc-end" /></label>
+
+          <button data-action="design-create-meeting" class="dc-submit">모임 만들기</button>
+        </fieldset>
+
+        <pre class="out" data-out="design-create"></pre>
+      </section>
+
+      <!-- K. 마이페이지 (시안 4) -->
+      <section id="sec-design-mypage" class="design-mock">
+        <h2>K. [디자인 재현] 마이페이지</h2>
+        <p class="note">
+          프로필 (name/bio/job/tags) 편집은 <code>PATCH /auth/me</code> 로 실 DB 반영.
+          출석률·회고·연결·알림 설정은 📌 Phase H.
+        </p>
+
+        <button data-action="mypage-load">/me + hosted + participated 로드</button>
+
+        <div id="mp-mock" class="mp-layout" hidden>
+          <div class="mp-card">
+            <strong id="mp-name">—</strong>
+            <span id="mp-job">—</span>
+            <p id="mp-bio">—</p>
+          </div>
+
+          <div class="mp-stats">
+            <div><strong id="mp-attendance">N/A</strong><small>출석률 <span class="lbl miss">📌 Phase H</span></small></div>
+            <div><strong id="mp-joined">—</strong><small>참여 모임</small></div>
+            <div><strong id="mp-upcoming">—</strong><small>예정 모임</small></div>
+            <div><strong id="mp-connections">N/A</strong><small>연결된 사람 <span class="lbl miss">📌 Phase H</span></small></div>
+          </div>
+
+          <div class="mp-card">
+            <h4>내 태그 (PATCH /auth/me 로 실 저장)</h4>
+            <div id="mp-tags"></div>
+            <input id="mp-new-tag" placeholder="#새태그" />
+            <button data-action="mypage-add-tag">+ 추가</button>
+          </div>
+
+          <div class="mp-card">
+            <h4>프로필 편집</h4>
+            <label>이름 <input id="mp-edit-name" /></label>
+            <label>한 줄 소개 <input id="mp-edit-bio" size="40" /></label>
+            <label>직무 <input id="mp-edit-job" placeholder="예: 백엔드" /></label>
+            <button data-action="mypage-save-profile">저장 (PATCH /auth/me)</button>
+          </div>
+
+          <div class="mp-tabs">
+            <button data-action="mypage-tab" data-val="upcoming" class="chip active">예정 (<span id="mp-tab-upcoming">0</span>)</button>
+            <button data-action="mypage-tab" data-val="past" class="chip">지난 (<span id="mp-tab-past">0</span>)</button>
+          </div>
+          <div id="mp-meetings"></div>
+
+          <div class="mp-card">
+            <h4>설정</h4>
+            <div>🔔 알림 설정 <span class="lbl miss">📌 Phase H</span></div>
+            <div>⚙️ 계정 설정 <span class="lbl miss">📌 Phase H</span></div>
+            <button data-action="logout" class="danger">🚪 로그아웃</button>
+          </div>
+        </div>
+
+        <pre class="out" data-out="mypage"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
